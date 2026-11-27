@@ -6,8 +6,8 @@ from .path_policy import AccessPolicy, PathDenied
 # reach this handler. Quoting a command inside a longer request is not enough.
 COMMANDS = [
     (r"(?:restrict (?:your )?access (?:to|for)|block(?: access to)?|deny access to)\s+(.+)", "blocked"),
-    (r"(?:allow(?: access to)?|grant (?:read.write )?access to|give yourself access to)\s+(.+)", "read_write"),
-    (r"(?:set read.only access (?:to|for)|make read.only|allow read.only access to)\s+(.+)", "read_only"),
+    (r"(?:set read[- ]only access (?:to|for)|make read[- ]only|allow read[- ]only access to)\s+(.+)", "read_only"),
+    (r"(?:allow(?: access to)?|grant (?:read[- ]write )?access to|give yourself access to)\s+(.+)", "read_write"),
     (r"(?:remove (?:the )?(?:permission|restriction) (?:for|on|from)|unblock)\s+(.+)", "remove"),
 ]
 
@@ -45,7 +45,8 @@ def handle_permission(text, ask=input, show=print):
             show("Permission unchanged.")
             return True
         current = AccessPolicy.load()
-        target = current.preview_change(path, mode)
+        if current.preview_change(path, mode) != target:
+            raise PathDenied("Target changed after confirmation.")
         current.changed(target, mode).save()
         show("Permission updated.")
     except (PathDenied, OSError, EOFError, KeyboardInterrupt) as exc:
