@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .tools import TOOL_REGISTRY
+from .path_policy import AccessPolicy, PathDenied, prepare_paths
 from .validation import ArgumentValidationError, validate_arguments
 from .permissions import confirm, PermissionDenied, describe_plan
 
@@ -42,6 +43,13 @@ def execute_tool_call(name: str, args: object) -> dict:
         })
         return {"error": f"Invalid arguments for {name}: {e}"}
 
+    try:
+        args = prepare_paths(name, args, AccessPolicy.load())
+    except (PathDenied, OSError) as e:
+        _log({"timestamp": datetime.now().isoformat(), "action": name,
+              "status": "blocked_path", "reason": str(e)})
+        return {"error": f"Path blocked: {e}"}
+
     tier = entry["tier"]
     plan_desc = describe_plan(name, args)
 
@@ -65,6 +73,8 @@ def execute_tool_call(name: str, args: object) -> dict:
         return {"error": "User declined this action."}
 
     try:
+        # Recheck after waiting for user confirmation.
+        args = prepare_paths(name, args, AccessPolicy.load())
         result = entry["fn"](**args)
         _log({
             "timestamp": datetime.now().isoformat(),
