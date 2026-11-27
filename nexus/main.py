@@ -33,7 +33,7 @@ def main():
     print(BANNER)
     try:
         policy = AccessPolicy.load()
-        if policy.visible(DEFAULT_WORKSPACE):
+        if policy.visible(DEFAULT_WORKSPACE) and not DEFAULT_WORKSPACE.exists():
             policy.check(DEFAULT_WORKSPACE, write=True).mkdir(exist_ok=True)
     except (PathDenied, OSError) as exc:
         print(f"Workspace unavailable: {exc}")
