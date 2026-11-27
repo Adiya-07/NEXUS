@@ -67,7 +67,7 @@ class ValidationTests(unittest.TestCase):
             self.assertEqual(log.call_args.args[0]["status"], "invalid_arguments")
 
     def test_valid_call_still_requires_permission(self):
-        with patch("nexus.executor.confirm", return_value=False) as confirm, patch("nexus.executor._log"):
+        with patch("nexus.executor.confirm", return_value=False) as confirm, patch("nexus.executor._log"), patch("nexus.executor.AccessPolicy.load"), patch("nexus.executor.prepare_paths", side_effect=lambda name, args, policy: args):
             with patch.dict(TOOL_REGISTRY["delete_file"], {"fn": lambda **_: self.fail("Tool executed")}):
                 result = execute_tool_call("delete_file", {"path": "a.txt"})
             confirm.assert_called_once()
