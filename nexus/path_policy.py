@@ -134,7 +134,7 @@ class AccessPolicy:
             raise PathDenied("System and NEXUS locations cannot be changed.")
         if mode in {"read_write", "read_only"} and not p.exists() and p != DEFAULT_WORKSPACE.resolve():
             raise PathDenied("Grant access to an existing file or folder.")
-        if mode == "remove" and str(p) not in self.rules:
+        if mode == "remove" and not any(Path(key) == p for key in self.rules):
             raise PathDenied("No explicit rule at this path.")
         return p
 
