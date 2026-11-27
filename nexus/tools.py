@@ -14,6 +14,7 @@ from pathlib import Path
 from datetime import datetime
 
 from .permissions import RiskTier
+from .path_policy import AccessPolicy
 
 
 # ---------------------------------------------------------------------------
@@ -23,19 +24,30 @@ from .permissions import RiskTier
 
 def search_files(directory: str, pattern: str, recursive: bool = True) -> list[str]:
     """Search for files matching a glob pattern (e.g. '*.pdf') under a directory."""
-    base = Path(directory).expanduser()
-    if not base.exists():
-        return []
-    matches = base.rglob(pattern) if recursive else base.glob(pattern)
-    return [str(p) for p in matches if p.is_file()]
+    policy = AccessPolicy.load()
+    base = policy.check(directory)
+    matches = []
+    import fnmatch
+    pending = [base]
+    while pending:
+        current = pending.pop()
+        if not policy.visible(current):
+            continue
+        for child in current.iterdir():
+            if not policy.visible(child):
+                continue
+            if child.is_dir() and recursive:
+                pending.append(child)
+            elif child.is_file() and fnmatch.fnmatch(child.name, pattern):
+                matches.append(str(child))
+    return matches
 
 
 def list_directory(directory: str) -> list[str]:
     """List the contents of a directory (non-recursive)."""
-    base = Path(directory).expanduser()
-    if not base.exists():
-        return []
-    return [str(p) for p in base.iterdir()]
+    policy = AccessPolicy.load()
+    base = policy.check(directory)
+    return [str(p) for p in base.iterdir() if policy.visible(p)]
 
 
 def create_folder(path: str) -> str:
