@@ -153,7 +153,7 @@ TOOL_REGISTRY = {
             "type": "object",
             "properties": {
                 "source": {"type": "string"},
-                "new_name": {"type": "string"},
+                "new_name": {"type": "string", "description": "New filename only, e.g. meeting_notes.txt. Do not include a folder or path."},
             },
             "required": ["source", "new_name"],
         },

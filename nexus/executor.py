@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .tools import TOOL_REGISTRY
+from .validation import ArgumentValidationError, validate_arguments
 from .permissions import confirm, PermissionDenied, describe_plan
 
 LOG_PATH = Path.home() / ".nexus" / "history.jsonl"
@@ -20,16 +21,27 @@ def _log(entry: dict) -> None:
         f.write(json.dumps(entry) + "\n")
 
 
-def execute_tool_call(name: str, args: dict) -> dict:
+def execute_tool_call(name: str, args: object) -> dict:
     """
     Execute a single proposed tool call after passing it through the
     permission layer. Returns a dict describing the outcome — this is what
     gets sent back to Claude as the tool_result.
     """
-    if name not in TOOL_REGISTRY:
+    if not isinstance(name, str) or name not in TOOL_REGISTRY:
         return {"error": f"Unknown tool '{name}' — refusing to execute."}
 
     entry = TOOL_REGISTRY[name]
+    try:
+        args = validate_arguments(name, args, entry["input_schema"])
+    except ArgumentValidationError as e:
+        _log({
+            "timestamp": datetime.now().isoformat(),
+            "action": name,
+            "status": "invalid_arguments",
+            "error": str(e),
+        })
+        return {"error": f"Invalid arguments for {name}: {e}"}
+
     tier = entry["tier"]
     plan_desc = describe_plan(name, args)
 

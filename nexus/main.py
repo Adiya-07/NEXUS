@@ -11,7 +11,6 @@ yet — see README.md for the roadmap.
 """
 
 import sys
-import json
 from .ollama_planner import OllamaPlanner
 from .executor import execute_tool_call, print_history
 
@@ -78,13 +77,8 @@ def main():
 
             for call in tool_calls:
                 fn = call["function"]
-                name = fn["name"]
-                args = fn["arguments"]
-                if isinstance(args, str):
-                    try:
-                        args = json.loads(args)
-                    except json.JSONDecodeError:
-                        args = {}
+                name = fn.get("name")
+                args = fn.get("arguments")
 
                 outcome = execute_tool_call(name, args)
                 messages.append({
