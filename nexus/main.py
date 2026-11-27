@@ -11,6 +11,8 @@ yet — see README.md for the roadmap.
 """
 
 import sys
+from time import perf_counter
+from .fast_path import run_fast_command
 from .ollama_planner import OllamaPlanner
 from .executor import execute_tool_call, print_history
 from .permission_commands import handle_permission
@@ -24,7 +26,7 @@ BANNER = """
 | |\\  | |___ /  \\| |_| |___) |
 |_| \\_|_____/_/\\_\\\\___/|____/
 
-NEXUS — Phase 1 (file operations only) — running locally via Ollama, free & unlimited
+NEXUS — Phase 1.5 (file operations only) — running locally via Ollama, free & unlimited
 Type a request in plain English, or 'history' to see past actions, or 'quit' to exit.
 """
 
@@ -45,6 +47,7 @@ def main():
         print("Make sure Ollama is installed and running: https://ollama.com/download")
         sys.exit(1)
 
+    print(f"AI model: {planner.model} | Fast path enabled")
     messages = []
 
     while True:
@@ -67,14 +70,34 @@ def main():
             messages.clear()
             continue
 
+        started = perf_counter()
+        try:
+            fast_result = run_fast_command(user_input)
+        except (KeyboardInterrupt, EOFError):
+            print("\nAction cancelled.")
+            continue
+        if fast_result is not None:
+            print(f"\nnexus> {fast_result}")
+            print(f"[Python | {perf_counter() - started:.2f}s elapsed, including confirmation]")
+            # Keep the direct result for later conversational references.
+            messages.extend([{"role": "user", "content": user_input},
+                             {"role": "assistant", "content": fast_result}])
+            continue
+
         messages.append({"role": "user", "content": user_input})
+        ai_seconds = 0.0
+        ai_calls = 0
 
         # Loop until the model stops requesting tool calls and gives a final answer.
         max_steps = 10  # safety valve against local-model loops
         for _ in range(max_steps):
             try:
+                ai_started = perf_counter()
+                ai_calls += 1
                 assistant_msg = planner.run_turn(messages)
+                ai_seconds += perf_counter() - ai_started
             except Exception as e:
+                ai_seconds += perf_counter() - ai_started
                 print(f"\nnexus> (error talking to Ollama: {e})")
                 break
 
@@ -96,10 +119,12 @@ def main():
                 outcome = execute_tool_call(name, args)
                 messages.append({
                     "role": "tool",
+                    "tool_name": name,
                     "content": str(outcome.get("result", outcome.get("error", ""))),
                 })
         else:
             print("\nnexus> (stopped after too many steps — try rephrasing your request)")
+        print(f"[AI | {ai_seconds:.2f}s inference | {ai_calls} calls | {perf_counter() - started:.2f}s total]")
 
 
 if __name__ == "__main__":
