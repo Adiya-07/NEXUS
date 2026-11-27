@@ -19,7 +19,9 @@ takes the slower, safer path:
 ```
 Natural language
       ↓
-Claude (tool-use / function-calling — proposes a plan, never executes)
+Qwen3 4B via Ollama (proposes a plan, never executes)
+      ↓
+Argument validation + path policy (default-deny)
       ↓
 Permission layer (risk-tiers every action: read-only / reversible / destructive / blocked)
       ↓
@@ -42,7 +44,7 @@ a full audit trail.
 1. **Install Ollama**: https://ollama.com/download (macOS/Windows/Linux, free)
 2. **Pull a tool-capable model** (pick one based on your laptop's RAM):
    ```bash
-   ollama pull llama3.1       # 8B, needs ~8GB RAM, best quality
+   ollama pull qwen3:4b       # default model
    ollama pull qwen2.5:7b     # similar size, also good at tool calling
    ollama pull qwen2.5:3b     # ~4GB RAM, lighter but weaker at tool calling
    ```
@@ -60,29 +62,45 @@ export NEXUS_MODEL=qwen2.5:7b
 python -m nexus.main
 ```
 
-## Example session
+## Access control
 
-```
-you> find all my PDFs from last semester and put them in a folder called College
-nexus> I found 14 PDFs in ~/Downloads and ~/Documents. I'll create a folder
-       called College and move them there.
+By default only ~/nexus_test is approved for read/write. NEXUS creates it
+on startup if permitted. Use absolute paths or paths starting with ~/.
+All other paths are denied, including protected system and NEXUS directories.
 
-NEXUS wants to: create_folder(path='~/College')
-Proceed? [y/N]: y
-[auto] search_files(directory='~/Downloads', pattern='*.pdf')
+Type these direct terminal commands (English phrases supported by a small
+rule-based parser, not arbitrary AI interpretation):
 
-NEXUS wants to: move_file(source='~/Downloads/notes1.pdf', destination_folder='~/College')
-Proceed? [y/N]: y
-...
-nexus> Done — created ~/College and moved 14 PDFs into it.
-```
+- permissions
+- Allow access to D:/College
+- Restrict your access to D:/College/Finance
+- Set read-only access to D:/College/Notes
+- Remove restriction for D:/College/Finance
+
+Each change requires typing CONFIRM at a separate Python prompt.
+Rules persist in ~/.nexus/permissions.json. Blocked and read-only rules
+override more permissive rules, including inherited grants. Removing a
+rule may restore inherited access. Grants require existing paths except the
+default workspace. Search skips inaccessible descendants and links; write
+operations check source and final destination and refuse existing targets.
+The model cannot call the permission manager.
+
+This is application-level protection, not an OS sandbox: concurrent
+filesystem changes can race validation, and other programs running as
+the user can edit the configuration. Do not grant broad sensitive locations.
+Use a dedicated test workspace first.
+
+Run regression tests with python -m unittest discover -s tests -v.
 
 ## Project structure
 
 ```
 nexus/
   tools.py          — the whitelisted actions NEXUS can take (the entire "surface area")
-  permissions.py    — risk tiers + confirmation logic (the core safety layer)
+  permissions.py    — risk tiers + confirmation logic
+  path_policy.py    — path checks and persistent access rules
+  permission_commands.py — direct user permission requests
+  validation.py     — argument validation
   ollama_planner.py — local Ollama tool-use integration (natural language → proposed plan)
   executor.py       — runs approved calls, logs everything to ~/.nexus/history.jsonl
   main.py           — CLI loop
