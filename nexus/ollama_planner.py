@@ -11,7 +11,7 @@ works fine.
 Setup:
     1. Install Ollama: https://ollama.com/download
     2. Pull a tool-capable model, e.g.:
-         ollama pull llama3.1        (8B, needs ~8GB RAM, best quality)
+         ollama pull qwen3:4b       (default, lightweight)
          ollama pull qwen2.5:7b      (similar size, good at tool calling)
          ollama pull qwen2.5:3b      (lighter, ~4GB RAM, lower quality)
     3. Make sure the Ollama app/service is running (it runs a local server
@@ -23,7 +23,7 @@ import ollama
 
 from .tools import ollama_tool_schemas
 
-MODEL = os.environ.get("NEXUS_MODEL", "llama3.1")
+MODEL = os.environ.get("NEXUS_MODEL", "qwen3:4b")
 
 SYSTEM_PROMPT = """You are NEXUS, an AI that helps a user operate their computer \
 through natural language. You do NOT have direct access to the filesystem — you can \
@@ -34,6 +34,10 @@ When a request needs multiple steps (e.g. "find my PDFs and put them in a new \
 folder"), call tools one at a time, using the result of one call to inform the \
 next. Be conservative: if a request is ambiguous, ask a clarifying question in \
 plain text instead of guessing which files to touch.
+
+Use absolute paths or ~/paths, never relative paths. The default approved
+workspace is ~/nexus_test. Only the user can change access rules via direct
+terminal commands. Never claim a permission change succeeded yourself.
 
 After tools have been run and you have their results, give the user a short, \
 plain-language summary of what happened.
@@ -53,5 +57,6 @@ class OllamaPlanner:
             model=self.model,
             messages=full_messages,
             tools=self.tools,
+            options={"num_ctx": 4096},
         )
-        return response["message"]
+        return response["message"].model_dump(exclude_none=True)

@@ -11,9 +11,10 @@ yet — see README.md for the roadmap.
 """
 
 import sys
-import json
 from .ollama_planner import OllamaPlanner
 from .executor import execute_tool_call, print_history
+from .permission_commands import handle_permission
+from .path_policy import AccessPolicy, DEFAULT_WORKSPACE, PathDenied
 
 
 BANNER = """
@@ -30,6 +31,13 @@ Type a request in plain English, or 'history' to see past actions, or 'quit' to 
 
 def main():
     print(BANNER)
+    try:
+        policy = AccessPolicy.load()
+        if policy.visible(DEFAULT_WORKSPACE) and not DEFAULT_WORKSPACE.exists():
+            policy.check(DEFAULT_WORKSPACE, write=True).mkdir(exist_ok=True)
+    except (PathDenied, OSError) as exc:
+        print(f"Workspace unavailable: {exc}")
+    print("Type 'permissions' to view access rules. Default workspace: ~/nexus_test")
     try:
         planner = OllamaPlanner()
     except Exception as e:
@@ -55,6 +63,10 @@ def main():
             print_history()
             continue
 
+        if handle_permission(user_input):
+            messages.clear()
+            continue
+
         messages.append({"role": "user", "content": user_input})
 
         # Loop until the model stops requesting tool calls and gives a final answer.
@@ -78,13 +90,8 @@ def main():
 
             for call in tool_calls:
                 fn = call["function"]
-                name = fn["name"]
-                args = fn["arguments"]
-                if isinstance(args, str):
-                    try:
-                        args = json.loads(args)
-                    except json.JSONDecodeError:
-                        args = {}
+                name = fn.get("name")
+                args = fn.get("arguments")
 
                 outcome = execute_tool_call(name, args)
                 messages.append({
