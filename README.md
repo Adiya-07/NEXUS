@@ -1,4 +1,4 @@
-# NEXUS — Phase 1 (File Operations)
+# NEXUS — Phase 1.5 (Hybrid File Assistant)
 
 An AI-native way to operate your filesystem through natural language,
 built around a strict permission/safety layer — the AI never runs raw
@@ -19,7 +19,7 @@ takes the slower, safer path:
 ```
 Natural language
       ↓
-Qwen3 4B via Ollama (proposes a plan, never executes)
+Command router → Python fast path OR Qwen2.5 3B via Ollama
       ↓
 Argument validation + path policy (default-deny)
       ↓
@@ -44,9 +44,8 @@ a full audit trail.
 1. **Install Ollama**: https://ollama.com/download (macOS/Windows/Linux, free)
 2. **Pull a tool-capable model** (pick one based on your laptop's RAM):
    ```bash
-   ollama pull qwen3:4b       # default model
-   ollama pull qwen2.5:7b     # similar size, also good at tool calling
-   ollama pull qwen2.5:3b     # ~4GB RAM, lighter but weaker at tool calling
+   ollama pull qwen2.5:3b    # default model
+   # Optional: ollama pull qwen3:4b
    ```
 3. **Install Python deps and run**:
    ```bash
@@ -61,6 +60,25 @@ than the default, set `NEXUS_MODEL`:
 export NEXUS_MODEL=qwen2.5:7b
 python -m nexus.main
 ```
+
+## Hybrid command routing
+
+Simple commands with explicit paths can use Python directly, without AI
+inference. Other requests go through the local AI planner, which receives
+the host operating system and home-directory context. Both routes use
+the same argument validation, path policy, confirmation and execution
+logic.
+
+Examples of fast-path commands:
+
+- `List the contents of ~/nexus_test`
+- `Create a folder called Demo inside ~/nexus_test`
+- `Find recursively *.pdf in ~/nexus_test`
+
+Quote paths containing spaces. The CLI displays which route was used and
+elapsed time. Manual Windows smoke tests recorded 0.02s for a directory
+listing, 0.01s for a blocked system path, and 13.68s for an AI response.
+These are individual observations, not a controlled benchmark.
 
 ## Access control
 
@@ -101,6 +119,7 @@ nexus/
   path_policy.py    — path checks and persistent access rules
   permission_commands.py — direct user permission requests
   validation.py     — argument validation
+  fast_path.py      — deterministic command routing
   ollama_planner.py — local Ollama tool-use integration (natural language → proposed plan)
   executor.py       — runs approved calls, logs everything to ~/.nexus/history.jsonl
   main.py           — CLI loop
@@ -116,6 +135,8 @@ permissions never depend on which model you use) is intentional.
 
 - **Phase 1 (this version):** file operations — search, move, copy, rename,
   create folder, delete. All permission-gated.
+- **Phase 1.5 (in progress):** hybrid routing, performance measurement,
+  reliability improvements, and planned undo/recovery.
 - **Phase 2:** app control — open/close apps, basic window management, via
   OS-level APIs (no shell).
 - **Phase 3 (highest risk, do last or skip):** a tightly whitelisted subset
@@ -127,7 +148,7 @@ permissions never depend on which model you use) is intentional.
 To add a new capability, add an entry to `TOOL_REGISTRY` in `tools.py` with:
 1. A small, well-tested Python function
 2. A `RiskTier`
-3. A JSON-schema `input_schema` describing its arguments to Claude
+3. A JSON-schema `input_schema` describing its arguments to the AI planner
 
 Never add a tool that accepts a raw command string as an argument — that
 defeats the entire point of the whitelist.
