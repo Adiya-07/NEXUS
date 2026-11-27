@@ -11,7 +11,7 @@ from nexus.tools import search_files, list_directory
 
 class PathPolicyTests(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory()
+        self.temp = tempfile.TemporaryDirectory(dir=Path.home())
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name).resolve()
         self.allowed = self.root / "allowed"
