@@ -11,19 +11,21 @@ works fine.
 Setup:
     1. Install Ollama: https://ollama.com/download
     2. Pull a tool-capable model, e.g.:
-         ollama pull qwen3:4b       (default, lightweight)
+         ollama pull qwen2.5:3b     (default, lightweight)
          ollama pull qwen2.5:7b      (similar size, good at tool calling)
-         ollama pull qwen2.5:3b      (lighter, ~4GB RAM, lower quality)
+         ollama pull qwen3:4b       (alternative)
     3. Make sure the Ollama app/service is running (it runs a local server
        on http://localhost:11434 automatically after install).
 """
 
 import os
+import platform
+from pathlib import Path
 import ollama
 
 from .tools import ollama_tool_schemas
 
-MODEL = os.environ.get("NEXUS_MODEL", "qwen3:4b")
+MODEL = os.environ.get("NEXUS_MODEL", "qwen2.5:3b")
 
 SYSTEM_PROMPT = """You are NEXUS, an AI that helps a user operate their computer \
 through natural language. You do NOT have direct access to the filesystem — you can \
@@ -52,11 +54,17 @@ class OllamaPlanner:
     def run_turn(self, messages: list[dict]) -> dict:
         """Send the conversation so far to the local model and get back its
         next move (either tool_calls to execute, or a plain text reply)."""
-        full_messages = [{"role": "system", "content": SYSTEM_PROMPT}] + messages
+        os_context = f"\nHost operating system: {platform.system()}. Home directory: {Path.home()}."
+        if os.name == "nt":
+            os_context += " Use Windows absolute paths such as C:/Users/ or ~/ paths. Do not assume Linux."
+        else:
+            os_context += " Use native absolute paths or ~/ paths."
+        full_messages = [{"role": "system", "content": SYSTEM_PROMPT + os_context}] + messages
         response = ollama.chat(
             model=self.model,
             messages=full_messages,
             tools=self.tools,
-            options={"num_ctx": 4096},
+            options={"num_ctx": 4096, "temperature": 0.1},
+            keep_alive="5m",
         )
         return response["message"].model_dump(exclude_none=True)
