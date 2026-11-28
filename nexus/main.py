@@ -20,8 +20,13 @@ from .recovery import handle_recovery, cleanup_expired
 from .path_policy import AccessPolicy, DEFAULT_WORKSPACE, PathDenied
 
 
-BANNER = """
-V E Y L
+BANNER = r"""
+ __     __ _____ __   __ _
+ \ \   / /| ____|\ \ / /| |
+  \ \ / / |  _|   \ V / | |
+   \ V /  | |___   | |  | |___
+    \_/   |_____|  |_|  |_____|
+
 VEYL — Phase 1.5 (file operations only) — running locally via Ollama
 Type a request in plain English, 'history' for actions, or 'quit' to exit.
 """
