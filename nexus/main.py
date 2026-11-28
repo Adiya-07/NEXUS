@@ -16,6 +16,7 @@ from .fast_path import run_fast_command
 from .ollama_planner import OllamaPlanner
 from .executor import execute_tool_call, print_history
 from .permission_commands import handle_permission
+from .recovery import handle_recovery
 from .path_policy import AccessPolicy, DEFAULT_WORKSPACE, PathDenied
 
 
@@ -48,6 +49,7 @@ def main():
         sys.exit(1)
 
     print(f"AI model: {planner.model} | Fast path enabled")
+    print("Type recovery to list recoverable files; restore <ID> to recover one.")
     messages = []
 
     while True:
@@ -67,6 +69,10 @@ def main():
             continue
 
         if handle_permission(user_input):
+            messages.clear()
+            continue
+
+        if handle_recovery(user_input):
             messages.clear()
             continue
 
