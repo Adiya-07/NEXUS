@@ -1,21 +1,17 @@
-"""Recoverable single-file deletion and user-only restore.
-
-The recovery directory is outside the agent's approved filesystem. No
-permanent purge is exposed. Cross-volume deletion fails rather than
-falling back to a risky copy-and-delete.
-"""
+"""Protected recycle bin with user-only restore, retention and pinning."""
 import json
 import os
 import re
 import shutil
 import tempfile
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 from .path_policy import AccessPolicy, PathDenied, safe_path
 
 RECOVERY_ROOT = Path.home() / ".nexus" / "recovery"
+DEFAULT_RETENTION = 7
 
 
 def _root(create=False):
@@ -40,7 +36,56 @@ def _metadata(entry):
             or not isinstance(data.get("original"), str)
             or not isinstance(data.get("deleted_at"), str)):
         raise PathDenied("Invalid recovery metadata.")
+    # Legacy entries have no expiry and are kept indefinitely.
+    if "pinned" in data and type(data["pinned"]) is not bool:
+        raise PathDenied("Invalid pin status.")
+    if data.get("expires_at") is not None:
+        _date(data["expires_at"])
     return data
+
+
+def _now():
+    return datetime.now(timezone.utc)
+
+
+def _date(value):
+    if not isinstance(value, str):
+        raise PathDenied("Invalid expiry.")
+    date = datetime.fromisoformat(value)
+    if date.tzinfo is None:
+        raise PathDenied("Missing expiry timezone.")
+    return date
+
+
+def _pinned(data):
+    return data.get("pinned", "expires_at" not in data)
+
+
+def _atomic_json(path, data):
+    path = safe_path(path)
+    temp = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8",
+                                         dir=path.parent, delete=False) as handle:
+            temp = Path(handle.name)
+            json.dump(data, handle, indent=2)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp, safe_path(path))
+    finally:
+        if temp is not None and temp.exists():
+            temp.unlink()
+
+
+def retention_days():
+    try:
+        data = json.loads(safe_path(_root() / "settings.json").read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return DEFAULT_RETENTION
+    if (not isinstance(data, dict) or type(data.get("days")) is not int
+            or not 1 <= data["days"] <= 365):
+        raise PathDenied("Invalid recycle bin retention settings.")
+    return data["days"]
 
 
 def recoverable_delete(path):
@@ -51,13 +96,16 @@ def recoverable_delete(path):
     root = _root(create=True)
     if source.stat().st_dev != root.stat().st_dev:
         raise PathDenied("Recovery storage is on another volume; original left unchanged.")
+    now = _now()
+    expires = now + timedelta(days=retention_days())
     recovery_id = uuid.uuid4().hex
     entry = root / recovery_id
     entry.mkdir(mode=0o700)
     # Write metadata before moving: a crash after rename still leaves a record.
     with (entry / "metadata.json").open("x", encoding="utf-8") as handle:
         json.dump({"version": 1, "original": str(source),
-                   "deleted_at": datetime.now(timezone.utc).isoformat()}, handle)
+                   "deleted_at": now.isoformat(), "expires_at": expires.isoformat(),
+                   "pinned": False}, handle)
         handle.flush()
         os.fsync(handle.fileno())
     source = AccessPolicy.load().check(source, write=True)
@@ -131,22 +179,111 @@ def restore_file(recovery_id, ask=input, show=print):
             staging.unlink()
 
 
+def set_pinned(recovery_id, pinned):
+    entry = _entry(recovery_id)
+    data = _metadata(entry)
+    if not safe_path(entry / "payload").is_file():
+        raise PathDenied("Recovery payload is missing.")
+    data["pinned"] = pinned
+    data["expires_at"] = None if pinned else (_now() + timedelta(days=retention_days())).isoformat()
+    _atomic_json(entry / "metadata.json", data)
+    return "File kept indefinitely." if pinned else "File unpinned; new retention period begins."
+
+
+def _purge(recovery_id, expected, reason):
+    # Only the known regular payload is removed; never recursively delete.
+    entry = _entry(recovery_id)
+    data = _metadata(entry)
+    if data != expected or _pinned(data):
+        raise PathDenied("Recovery entry changed or is pinned.")
+    payload = safe_path(entry / "payload")
+    if not payload.is_file():
+        raise PathDenied("Recovery payload is missing.")
+    if reason == "expired" and (not data.get("expires_at") or _date(data["expires_at"]) > _now()):
+        raise PathDenied("Entry is not expired.")
+    payload.unlink()
+    data["purged_at"] = _now().isoformat()
+    data["purge_reason"] = reason
+    _atomic_json(entry / "metadata.json", data)
+
+
+def cleanup_expired(show=print):
+    try:
+        retention_days()
+        for recovery_id, data in list_recovery():
+            if _pinned(data) or not data.get("expires_at"):
+                continue
+            try:
+                if _date(data["expires_at"]) <= _now():
+                    _purge(recovery_id, data, "expired")
+                    show(f"Recycle bin: expired {recovery_id}.")
+            except (OSError, ValueError, RuntimeError) as exc:
+                show(f"Recycle bin cleanup skipped {recovery_id}: {exc}")
+    except (OSError, ValueError, RuntimeError) as exc:
+        show(f"Recycle bin cleanup unavailable: {exc}")
+
+
 def handle_recovery(text, ask=input, show=print):
-    """Only the direct user CLI calls this; not exposed to the model."""
-    command = text.strip()
-    listing = command.lower() in {"recovery", "list recovery"}
-    match = re.fullmatch(r"restore\s+([0-9a-f]{32})", command, re.IGNORECASE)
-    if not listing and not match:
+    """Direct user CLI only; none of these commands are model tools."""
+    command = text.strip().lower()
+    listing = command in {"recovery", "list recovery", "recycle bin"}
+    match = re.fullmatch(r"(restore|keep|unkeep)\s+([0-9a-f]{32})", command)
+    retention = re.fullmatch(r"retention(?:\s+(\d{1,3}))?", command)
+    empty = command == "empty bin"
+    if not (listing or match or retention or empty):
         return False
     try:
         if listing:
             records = list_recovery()
             if not records:
                 show("No recoverable files.")
+            total = 0
             for recovery_id, data in records:
-                show(f"{recovery_id} | {data['deleted_at']} | {data['original']!r}")
-        else:
-            show(restore_file(match.group(1).lower(), ask=ask, show=show))
+                size = safe_path(_entry(recovery_id) / "payload").stat().st_size
+                total += size
+                expiry = "kept indefinitely" if _pinned(data) else data.get("expires_at", "no expiry")
+                show(f"{recovery_id} | {data['original']!r} | {size} bytes | {expiry}")
+            show(f"Recycle bin: {total} bytes | New file retention: {retention_days()} days")
+        elif match:
+            action, recovery_id = match.groups()
+            if action == "restore":
+                show(restore_file(recovery_id, ask=ask, show=show))
+            else:
+                if action == "unkeep":
+                    show("Unpinning starts a new expiration period.")
+                    if ask("Type UNKEEP to confirm: ").strip() != "UNKEEP":
+                        show("Cancelled.")
+                        return True
+                show(set_pinned(recovery_id, action == "keep"))
+        elif retention:
+            if retention.group(1) is None:
+                show(f"Retention for new files: {retention_days()} days")
+            else:
+                days = int(retention.group(1))
+                if not 1 <= days <= 365:
+                    raise PathDenied("Choose 1 to 365 days.")
+                show(f"New deletions permanently expire after {days} days. Existing expiry dates are unchanged.")
+                if ask("Type CONFIRM to apply: ").strip() == "CONFIRM":
+                    _atomic_json(_root(create=True) / "settings.json", {"days": days})
+                    show("Retention updated.")
+                else:
+                    show("Cancelled.")
+        elif empty:
+            candidates = [(i, d) for i, d in list_recovery() if not _pinned(d)]
+            if not candidates:
+                show("No unpinned files to empty.")
+                return True
+            for recovery_id, data in candidates:
+                show(f"{recovery_id} | {data['original']!r}")
+            if ask(f"Permanently delete {len(candidates)} unpinned files? Type EMPTY: ").strip() != "EMPTY":
+                show("Cancelled.")
+                return True
+            for recovery_id, data in candidates:
+                try:
+                    _purge(recovery_id, data, "manual")
+                    show(f"Purged {recovery_id}.")
+                except (OSError, ValueError, RuntimeError) as exc:
+                    show(f"Skipped {recovery_id}: {exc}")
     except (OSError, ValueError, RuntimeError, EOFError, KeyboardInterrupt) as exc:
         show(f"Recovery refused or failed: {exc}")
     return True
