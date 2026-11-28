@@ -18,6 +18,7 @@ from .executor import execute_tool_call, print_history
 from .permission_commands import handle_permission
 from .recovery import handle_recovery, cleanup_expired
 from .undo import handle_undo
+from .language import normalize_read_command, run_file_intent
 from .path_policy import AccessPolicy, DEFAULT_WORKSPACE, PathDenied
 
 
@@ -69,6 +70,7 @@ def main():
 
         if not user_input:
             continue
+        user_input = normalize_read_command(user_input)
         if user_input.lower() in ("quit", "exit"):
             print("bye.")
             break
@@ -90,7 +92,9 @@ def main():
 
         started = perf_counter()
         try:
-            fast_result = run_fast_command(user_input)
+            fast_result = run_file_intent(user_input)
+            if fast_result is None:
+                fast_result = run_fast_command(user_input)
         except (KeyboardInterrupt, EOFError):
             print("\nAction cancelled.")
             continue
