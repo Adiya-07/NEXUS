@@ -1,11 +1,11 @@
 """
-permissions.py — The permission / safety layer for NEXUS.
+permissions.py — The permission / safety layer for VEYL.
 
 Every tool the AI can call is tagged with a risk tier. This module decides
 whether an action can run automatically, needs a one-click confirmation,
 needs an explicit typed confirmation, or is blocked outright.
 
-This is the part of NEXUS that should never be bypassed — the LLM never
+This is the part of VEYL that should never be bypassed — the LLM never
 executes anything directly, it only ever *proposes* a call to a tool
 function, and this layer decides what happens next.
 """
@@ -49,14 +49,14 @@ def confirm(action_name: str, args: dict, tier: RiskTier) -> bool:
         return True
 
     if tier == RiskTier.REVERSIBLE_WRITE:
-        print(f"\nNEXUS wants to: {plan_desc}")
+        print(f"\nVEYL wants to: {plan_desc}")
         resp = input("Proceed? [y/N]: ").strip().lower()
         return resp == "y"
 
     if tier == RiskTier.DESTRUCTIVE:
         print(f"\n⚠️  DESTRUCTIVE ACTION: {plan_desc}")
         if action_name == "delete_file":
-            print("This moves the file to recovery storage; restore is user-controlled.")
+            print("This moves the file to the recycle bin. Unpinned files expire automatically; restore is user-controlled.")
         else:
             print("This cannot be easily undone.")
         resp = input(f"Type the action name '{action_name}' to confirm, or anything else to cancel: ").strip()
