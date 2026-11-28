@@ -1,4 +1,4 @@
-# NEXUS — Phase 1.5 (Hybrid File Assistant)
+# VEYL — Phase 1.5 (Hybrid File Assistant)
 
 An AI-native way to operate your filesystem through natural language,
 built around a strict permission/safety layer — the AI never runs raw
@@ -13,7 +13,7 @@ retries/rephrasing on complex requests than you'd get from Claude/GPT.
 ## Why this design
 
 Most "AI controls your computer" demos let the model generate and execute
-arbitrary shell commands. That's fast to build and dangerous to run. NEXUS
+arbitrary shell commands. That's fast to build and dangerous to run. VEYL
 takes the slower, safer path:
 
 ```
@@ -50,15 +50,15 @@ a full audit trail.
 3. **Install Python deps and run**:
    ```bash
    pip install -r requirements.txt
-   python -m nexus.main
+   python -m veyl.main
    ```
 
 Ollama runs a local server automatically after install (`localhost:11434`) —
 no need to start anything separately. If you want to use a different model
-than the default, set `NEXUS_MODEL`:
+than the default, set `VEYL_MODEL`:
 ```bash
-export NEXUS_MODEL=qwen2.5:7b
-python -m nexus.main
+export VEYL_MODEL=qwen2.5:7b
+python -m veyl.main
 ```
 
 ## Hybrid command routing
@@ -80,28 +80,44 @@ elapsed time. Manual Windows smoke tests recorded 0.02s for a directory
 listing, 0.01s for a blocked system path, and 13.68s for an AI response.
 These are individual observations, not a controlled benchmark.
 
-## File recovery (Phase 1.5)
+## Recycle bin (Phase 1.5)
 
-File deletion still requires typing `delete_file` at the confirmation
-prompt, but moves the original file to `~/.nexus/recovery` instead of
-permanently deleting it. The recovery area is blocked from AI filesystem
-tools.
+Deletion requires typing `delete_file` at confirmation. The original file
+moves into protected `~/.nexus/recovery` storage. New unpinned files expire
+after seven days by default. Cleanup runs on startup and between terminal
+requests when an hour has elapsed; it does not run while VEYL is closed
+or idle at the input prompt.
 
-- `recovery`: list saved recovery IDs and original locations.
-- `restore <ID>`: restore the original file after typing `RESTORE`.
+Direct user commands (not available as AI tools):
 
-Restore rechecks the current access policy, refuses to replace existing
-files, and retains the recovery backup. Cross-volume deletion is refused
-rather than falling back to copy-and-delete. There is no purge command yet;
-backups consume disk space. Only single-file deletion is recoverable in
-this version; undo for moves and renames is planned. Recovery is not a
-substitute for independent backups or an OS sandbox.
+- `recycle bin` or `recovery`: list file IDs, paths, sizes and expiration.
+- `restore <ID>`: confirm with RESTORE; never overwrite existing files.
+  The recovery copy is retained until expiry.
+- `keep <ID>`: keep a file indefinitely.
+- `unkeep <ID>`: confirm with UNKEEP to begin a fresh retention period.
+- `retention` or `retention 14`: inspect or set retention (1–365 days,
+  CONFIRM required; applies to new deletions and unpinning).
+- `empty bin`: preview unpinned files and type EMPTY to permanently purge.
+
+Legacy recovery records without expiry are kept indefinitely. Pinned files
+are excluded from automatic and manual cleanup. Metadata remains after
+purging. Cross-volume deletion is refused. Undo for moves and renames
+is still planned. Recovery is not a substitute for independent backups.
+
+## Name and compatibility
+
+VEYL is the new project name. Use `python -m veyl.main` to launch.
+The existing `nexus` implementation package, `~/.nexus` state directory,
+and `~/nexus_test` workspace are intentionally retained in this release
+to preserve compatibility, permissions, history and recovery records.
+The old NEXUS_MODEL environment variable is supported as a fallback to
+VEYL_MODEL. No existing data is migrated or deleted by the rebrand.
 
 ## Access control
 
-By default only ~/nexus_test is approved for read/write. NEXUS creates it
+By default only ~/nexus_test is approved for read/write. VEYL creates it
 on startup if permitted. Use absolute paths or paths starting with ~/.
-All other paths are denied, including protected system and NEXUS directories.
+All other paths are denied, including protected system and VEYL directories.
 
 Type these direct terminal commands (English phrases supported by a small
 rule-based parser, not arbitrary AI interpretation):
@@ -131,13 +147,13 @@ Run regression tests with python -m unittest discover -s tests -v.
 
 ```
 nexus/
-  tools.py          — the whitelisted actions NEXUS can take (the entire "surface area")
+  tools.py          — the whitelisted actions VEYL can take (the entire "surface area")
   permissions.py    — risk tiers + confirmation logic
   path_policy.py    — path checks and persistent access rules
   permission_commands.py — direct user permission requests
   validation.py     — argument validation
   fast_path.py      — deterministic command routing
-  recovery.py       — recoverable deletion and user-only restore
+  recovery.py       — protected recycle bin, retention and user-only restore
   ollama_planner.py — local Ollama tool-use integration (natural language → proposed plan)
   executor.py       — runs approved calls, logs everything to ~/.nexus/history.jsonl
   main.py           — CLI loop
@@ -154,7 +170,7 @@ permissions never depend on which model you use) is intentional.
 - **Phase 1 (this version):** file operations — search, move, copy, rename,
   create folder, delete. All permission-gated.
 - **Phase 1.5 (in progress):** hybrid routing, performance measurement,
-  reliability improvements, and planned undo/recovery.
+  reliability improvements, recycle bin, and planned undo for other operations.
 - **Phase 2:** app control — open/close apps, basic window management, via
   OS-level APIs (no shell).
 - **Phase 3 (highest risk, do last or skip):** a tightly whitelisted subset
