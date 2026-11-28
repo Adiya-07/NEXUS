@@ -58,7 +58,7 @@ def safe_path(value):
 def system_roots(path):
     home = Path.home()
     roots = [
-        home / ".nexus", home / ".ssh", home / ".gnupg", home / ".aws",
+        home / ".nexus", home / ".veyl", home / ".ssh", home / ".gnupg", home / ".aws",
         home / ".config", home / ".kube", home / ".azure", home / ".ollama",
         Path(__file__).resolve().parent.parent,
     ]
@@ -109,7 +109,7 @@ class AccessPolicy:
     def check(self, value, write=False):
         p = safe_path(value)
         if p == Path(p.anchor) or any(within(p, root) for root in system_roots(p)):
-            raise PathDenied("System or NEXUS configuration location is protected.")
+            raise PathDenied("System or VEYL configuration location is protected.")
         modes = {mode for root, mode in self.rules.items() if within(p, Path(root))}
         if "blocked" in modes:
             raise PathDenied("User restriction blocks this path.")
@@ -131,7 +131,7 @@ class AccessPolicy:
             raise PathDenied("Unknown access level.")
         p = safe_path(value)
         if p == Path(p.anchor) or any(within(p, root) for root in system_roots(p)):
-            raise PathDenied("System and NEXUS locations cannot be changed.")
+            raise PathDenied("System and VEYL locations cannot be changed.")
         if mode in {"read_write", "read_only"} and not p.exists() and p != DEFAULT_WORKSPACE.resolve():
             raise PathDenied("Grant access to an existing file or folder.")
         if mode == "remove" and not any(Path(key) == p for key in self.rules):
