@@ -17,6 +17,7 @@ from .ollama_planner import OllamaPlanner
 from .executor import execute_tool_call, print_history
 from .permission_commands import handle_permission
 from .recovery import handle_recovery, cleanup_expired
+from .undo import handle_undo
 from .path_policy import AccessPolicy, DEFAULT_WORKSPACE, PathDenied
 
 
@@ -52,6 +53,7 @@ def main():
 
     print(f"AI model: {planner.model} | Fast path enabled")
     print("Type recycle bin to list deleted files; restore <ID> to recover one.")
+    print("Type undo list to see reversible file operations; undo <ID> to reverse one.")
     messages = []
 
     while True:
@@ -79,6 +81,10 @@ def main():
             continue
 
         if handle_recovery(user_input):
+            messages.clear()
+            continue
+
+        if handle_undo(user_input):
             messages.clear()
             continue
 

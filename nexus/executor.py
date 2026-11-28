@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .tools import TOOL_REGISTRY
+from .undo import capture_before, record_success
 from .path_policy import AccessPolicy, PathDenied, prepare_paths
 from .validation import ArgumentValidationError, validate_arguments
 from .permissions import confirm, PermissionDenied, describe_plan
@@ -75,13 +76,27 @@ def execute_tool_call(name: str, args: object) -> dict:
     try:
         # Recheck after waiting for user confirmation.
         args = prepare_paths(name, args, AccessPolicy.load())
+        snapshot = capture_before(name, args)
         result = entry["fn"](**args)
+        undo_id = None
+        undo_warning = None
+        if snapshot is not None:
+            try:
+                undo_id = record_success(name, snapshot, result)
+            except (OSError, ValueError, RuntimeError, TypeError) as exc:
+                undo_warning = f"Action succeeded, but undo is unavailable: {exc}"
         _log({
             "timestamp": datetime.now().isoformat(),
             "action": plan_desc,
             "status": "executed",
             "result": str(result),
+            "undo_id": undo_id,
+            "undo_warning": undo_warning,
         })
+        if undo_id:
+            return {"result": f"{result}\nUndo ID: {undo_id}"}
+        if undo_warning:
+            return {"result": f"{result}\n{undo_warning}"}
         return {"result": result}
     except Exception as e:
         _log({

@@ -101,8 +101,20 @@ Direct user commands (not available as AI tools):
 
 Legacy recovery records without expiry are kept indefinitely. Pinned files
 are excluded from automatic and manual cleanup. Metadata remains after
-purging. Cross-volume deletion is refused. Undo for moves and renames
-is still planned. Recovery is not a substitute for independent backups.
+purging. Cross-volume deletion is refused. Undo for moves, renames and copies is supported as described below. Recovery is not a substitute for independent backups.
+
+## Undo engine
+
+Direct user commands: `undo list`, `undo` (latest available record), or
+`undo <ID>`. Type UNDO to confirm. The AI cannot invoke these commands.
+Successful single-file moves, renames and copies are journaled in
+`~/.nexus/undo`. SHA-256 and file identity/metadata checks detect changes;
+current permissions are rechecked and existing destinations are never
+overwritten by undo. Undoing a copy sends the duplicate to the recycle bin.
+Cross-volume moves, folder creation, past unjournaled actions and records
+left pending/uncertain by failures are not automatically reversible.
+Hashing large files may take time. This is application-level protection,
+not an OS sandbox or a transactional filesystem.
 
 ## Name and compatibility
 
@@ -154,6 +166,7 @@ nexus/
   validation.py     — argument validation
   fast_path.py      — deterministic command routing
   recovery.py       — protected recycle bin, retention and user-only restore
+  undo.py           — persistent journal and user-only reversal
   ollama_planner.py — local Ollama tool-use integration (natural language → proposed plan)
   executor.py       — runs approved calls, logs everything to ~/.nexus/history.jsonl
   main.py           — CLI loop
