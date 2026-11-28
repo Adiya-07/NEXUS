@@ -25,9 +25,9 @@ import ollama
 
 from .tools import ollama_tool_schemas
 
-MODEL = os.environ.get("NEXUS_MODEL", "qwen2.5:3b")
+MODEL = os.environ.get("VEYL_MODEL", os.environ.get("NEXUS_MODEL", "qwen2.5:3b"))
 
-SYSTEM_PROMPT = """You are NEXUS, an AI that helps a user operate their computer \
+SYSTEM_PROMPT = """You are VEYL, an AI that helps a user operate their computer \
 through natural language. You do NOT have direct access to the filesystem — you can \
 only propose calls to the tools you've been given. You never invent tools that \
 aren't in your tool list, and you never ask the user to run shell commands manually.

@@ -15,6 +15,7 @@ from datetime import datetime
 
 from .permissions import RiskTier
 from .path_policy import AccessPolicy
+from .recovery import recoverable_delete
 
 
 # ---------------------------------------------------------------------------
@@ -86,10 +87,8 @@ def rename_file(source: str, new_name: str) -> str:
 
 
 def delete_file(path: str) -> str:
-    """Delete a single file. DESTRUCTIVE — always requires explicit confirmation."""
-    p = Path(path).expanduser()
-    p.unlink()
-    return f"Deleted {p}"
+    """Move a single file to recovery after explicit confirmation."""
+    return recoverable_delete(path)
 
 
 # ---------------------------------------------------------------------------
@@ -173,7 +172,7 @@ TOOL_REGISTRY = {
     "delete_file": {
         "fn": delete_file,
         "tier": RiskTier.DESTRUCTIVE,
-        "description": "Permanently delete a single file. Use with caution.",
+        "description": "Move a single file to recoverable storage. Requires explicit confirmation. Never permanently deletes it.",
         "input_schema": {
             "type": "object",
             "properties": {"path": {"type": "string"}},
