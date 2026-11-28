@@ -18,20 +18,38 @@ SUPPORTED = {"move_file", "rename_file", "copy_file"}
 
 def _fingerprint(path):
     path = safe_path(path)
+
     def identity(info):
         return [info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns,
                 info.st_ctime_ns, stat.S_IMODE(info.st_mode)]
+
+    def regular(info):
+        return stat.S_ISREG(info.st_mode) and info.st_nlink == 1
+
+    def same_file(path_info, handle_info):
+        # Windows can report different ctime values through stat and fstat.
+        # Compare stable file identity across APIs; compare full metadata
+        # within each API independently, before and after reading.
+        return (regular(path_info) and regular(handle_info)
+                and path_info.st_ino != 0
+                and (path_info.st_dev, path_info.st_ino, path_info.st_size)
+                == (handle_info.st_dev, handle_info.st_ino, handle_info.st_size))
+
     digest = hashlib.sha256()
+    path_before = path.stat()
     with path.open("rb") as stream:
         before = os.fstat(stream.fileno())
-        if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1:
-            raise PathDenied("Undo requires a regular, unlinked file.")
+        if not same_file(path_before, before):
+            raise PathDenied("Undo requires a regular file with matching identity.")
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
         after = os.fstat(stream.fileno())
-    if identity(before) != identity(after) or identity(after) != identity(safe_path(path).stat()):
-        raise PathDenied("File changed during fingerprinting.")
-    return {"identity": identity(after), "sha256": digest.hexdigest()}
+        path_after = safe_path(path).stat()
+        if (identity(before) != identity(after)
+                or identity(path_before) != identity(path_after)
+                or not same_file(path_after, after)):
+            raise PathDenied("File changed during fingerprinting.")
+    return {"identity": identity(path_after), "sha256": digest.hexdigest()}
 
 
 def _root(create=False):
