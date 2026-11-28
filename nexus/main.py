@@ -1,39 +1,36 @@
 """
-main.py — NEXUS CLI entry point, running on a free local Ollama model.
+main.py — VEYL CLI entry point, running on a free local Ollama model.
 
 Run with: python -m nexus.main
 Requires Ollama installed and running locally, with a tool-capable model
 pulled (see nexus/ollama_planner.py for setup instructions).
 
-This is Phase 1 of NEXUS: natural-language file operations only, with a
+This is Phase 1 of VEYL: natural-language file operations only, with a
 full permission/confirmation layer. No raw shell execution, no app control
 yet — see README.md for the roadmap.
 """
 
 import sys
-from time import perf_counter
+from time import perf_counter, monotonic
 from .fast_path import run_fast_command
 from .ollama_planner import OllamaPlanner
 from .executor import execute_tool_call, print_history
 from .permission_commands import handle_permission
-from .recovery import handle_recovery
+from .recovery import handle_recovery, cleanup_expired
 from .path_policy import AccessPolicy, DEFAULT_WORKSPACE, PathDenied
 
 
 BANNER = """
- _   _ _______  ___   _ ____
-| \\ | | ____\\ \\/ / | | / ___|
-|  \\| |  _|  \\  /| | | \\___ \\
-| |\\  | |___ /  \\| |_| |___) |
-|_| \\_|_____/_/\\_\\\\___/|____/
-
-NEXUS — Phase 1.5 (file operations only) — running locally via Ollama, free & unlimited
-Type a request in plain English, or 'history' to see past actions, or 'quit' to exit.
+V E Y L
+VEYL — Phase 1.5 (file operations only) — running locally via Ollama
+Type a request in plain English, 'history' for actions, or 'quit' to exit.
 """
 
 
 def main():
     print(BANNER)
+    cleanup_expired(show=print)
+    last_cleanup = monotonic()
     try:
         policy = AccessPolicy.load()
         if policy.visible(DEFAULT_WORKSPACE) and not DEFAULT_WORKSPACE.exists():
@@ -49,7 +46,7 @@ def main():
         sys.exit(1)
 
     print(f"AI model: {planner.model} | Fast path enabled")
-    print("Type recovery to list recoverable files; restore <ID> to recover one.")
+    print("Type recycle bin to list deleted files; restore <ID> to recover one.")
     messages = []
 
     while True:
@@ -58,6 +55,10 @@ def main():
         except (EOFError, KeyboardInterrupt):
             print("\nbye.")
             sys.exit(0)
+
+        if monotonic() - last_cleanup >= 3600:
+            cleanup_expired(show=print)
+            last_cleanup = monotonic()
 
         if not user_input:
             continue
@@ -83,7 +84,7 @@ def main():
             print("\nAction cancelled.")
             continue
         if fast_result is not None:
-            print(f"\nnexus> {fast_result}")
+            print(f"\nveyl> {fast_result}")
             print(f"[Python | {perf_counter() - started:.2f}s elapsed, including confirmation]")
             # Keep the direct result for later conversational references.
             messages.extend([{"role": "user", "content": user_input},
@@ -104,14 +105,14 @@ def main():
                 ai_seconds += perf_counter() - ai_started
             except Exception as e:
                 ai_seconds += perf_counter() - ai_started
-                print(f"\nnexus> (error talking to Ollama: {e})")
+                print(f"\nveyl> (error talking to Ollama: {e})")
                 break
 
             messages.append(assistant_msg)
 
             content = assistant_msg.get("content", "")
             if content and content.strip():
-                print(f"\nnexus> {content.strip()}")
+                print(f"\nveyl> {content.strip()}")
 
             tool_calls = assistant_msg.get("tool_calls") or []
             if not tool_calls:
@@ -129,7 +130,7 @@ def main():
                     "content": str(outcome.get("result", outcome.get("error", ""))),
                 })
         else:
-            print("\nnexus> (stopped after too many steps — try rephrasing your request)")
+            print("\nveyl> (stopped after too many steps — try rephrasing your request)")
         print(f"[AI | {ai_seconds:.2f}s inference | {ai_calls} calls | {perf_counter() - started:.2f}s total]")
 
 
