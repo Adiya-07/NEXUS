@@ -80,6 +80,23 @@ elapsed time. Manual Windows smoke tests recorded 0.02s for a directory
 listing, 0.01s for a blocked system path, and 13.68s for an AI response.
 These are individual observations, not a controlled benchmark.
 
+## File recovery (Phase 1.5)
+
+File deletion still requires typing `delete_file` at the confirmation
+prompt, but moves the original file to `~/.nexus/recovery` instead of
+permanently deleting it. The recovery area is blocked from AI filesystem
+tools.
+
+- `recovery`: list saved recovery IDs and original locations.
+- `restore <ID>`: restore the original file after typing `RESTORE`.
+
+Restore rechecks the current access policy, refuses to replace existing
+files, and retains the recovery backup. Cross-volume deletion is refused
+rather than falling back to copy-and-delete. There is no purge command yet;
+backups consume disk space. Only single-file deletion is recoverable in
+this version; undo for moves and renames is planned. Recovery is not a
+substitute for independent backups or an OS sandbox.
+
 ## Access control
 
 By default only ~/nexus_test is approved for read/write. NEXUS creates it
@@ -120,6 +137,7 @@ nexus/
   permission_commands.py — direct user permission requests
   validation.py     — argument validation
   fast_path.py      — deterministic command routing
+  recovery.py       — recoverable deletion and user-only restore
   ollama_planner.py — local Ollama tool-use integration (natural language → proposed plan)
   executor.py       — runs approved calls, logs everything to ~/.nexus/history.jsonl
   main.py           — CLI loop
