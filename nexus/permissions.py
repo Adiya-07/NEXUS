@@ -55,7 +55,10 @@ def confirm(action_name: str, args: dict, tier: RiskTier) -> bool:
 
     if tier == RiskTier.DESTRUCTIVE:
         print(f"\n⚠️  DESTRUCTIVE ACTION: {plan_desc}")
-        print("This cannot be easily undone.")
+        if action_name == "delete_file":
+            print("This moves the file to recovery storage; restore is user-controlled.")
+        else:
+            print("This cannot be easily undone.")
         resp = input(f"Type the action name '{action_name}' to confirm, or anything else to cancel: ").strip()
         return resp == action_name
 
